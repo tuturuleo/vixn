@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 
 import { routeTree } from './routeTree.gen'
+import { Spinner } from './components/layout/Spinner'
 import './styles/index.css'
 
 // Vite's BASE_URL is '/vixn/'; the router wants it without the trailing slash.
@@ -12,6 +13,7 @@ const router = createRouter({
   routeTree,
   basepath,
   defaultPreload: 'intent',
+  defaultPendingComponent: Spinner,
   scrollRestoration: true,
 })
 
