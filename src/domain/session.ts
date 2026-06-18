@@ -56,3 +56,24 @@ export function filledSets(session: WorkoutSession): number {
     0,
   )
 }
+
+export interface Step {
+  entryIndex: number
+  setIndex: number
+}
+
+/** Flattens the session into a linear list of (exercise, set) steps. */
+export function flatSteps(session: WorkoutSession): Step[] {
+  const steps: Step[] = []
+  session.entries.forEach((entry, entryIndex) => {
+    entry.sets.forEach((_, setIndex) => steps.push({ entryIndex, setIndex }))
+  })
+  return steps
+}
+
+/** 0-based position of a cursor within the flat step list (-1 if absent). */
+export function stepIndex(session: WorkoutSession, cursor: Step): number {
+  return flatSteps(session).findIndex(
+    (s) => s.entryIndex === cursor.entryIndex && s.setIndex === cursor.setIndex,
+  )
+}

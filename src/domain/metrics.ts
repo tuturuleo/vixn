@@ -25,3 +25,13 @@ export function formatMetricValue(type: MetricType, value: number): string {
   const num = precision === 0 ? Math.round(value) : Number(value.toFixed(precision))
   return unit ? `${num} ${unit}` : `${num}`
 }
+
+/** One-line summary of a set across its metrics, e.g. "60 кг · 10". */
+export function formatSetLine(
+  metrics: readonly MetricType[],
+  values: Partial<Record<MetricType, number>>,
+): string {
+  return metrics
+    .map((m) => (values[m] != null ? formatMetricValue(m, values[m]!) : '—'))
+    .join(' · ')
+}
