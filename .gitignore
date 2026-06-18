@@ -1,0 +1,12 @@
+node_modules
+dist
+dev-dist
+*.local
+.DS_Store
+
+# TanStack Router generated file
+src/routeTree.gen.ts
+
+# IDE
+.idea
+.claude/settings.local.json
