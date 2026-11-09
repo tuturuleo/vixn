@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { sessionsRepo } from '@/db/repositories'
-import { flatSteps, stepIndex, type Step } from '@/domain/session'
+import {
+  flatSteps,
+  normalizeCursor,
+  stepIndex,
+  type Step,
+} from '@/domain/session'
 import type {
   MetricType,
   SetResult,
@@ -85,12 +90,15 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
   hydrated: false,
 
   async loadActive() {
-    const session = await sessionsRepo.getActive()
+    const stored = await sessionsRepo.getActive()
+    const session = stored ? normalizeCursor(stored) : null
+    if (session && session !== stored) await sessionsRepo.save(session)
     set({ session, hydrated: true })
   },
 
-  async start(session) {
+  async start(raw) {
     cancelPendingSave()
+    const session = normalizeCursor(raw)
     await sessionsRepo.save(session)
     set({ session, hydrated: true })
   },

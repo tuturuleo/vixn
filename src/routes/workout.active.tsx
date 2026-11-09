@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { X, ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { X, ArrowLeft, ArrowRight, Check, Dumbbell } from 'lucide-react'
+import { EmptyState } from '@/components/layout/EmptyState'
 import { Button } from '@/components/ui/button'
 import { NumberField } from '@/features/workout/NumberField'
 import { useActiveWorkout } from '@/stores/activeWorkout'
@@ -21,6 +22,7 @@ function ActiveWorkoutPage() {
   const next = useActiveWorkout((s) => s.next)
   const prev = useActiveWorkout((s) => s.prev)
   const complete = useActiveWorkout((s) => s.complete)
+  const discard = useActiveWorkout((s) => s.discard)
 
   useEffect(() => {
     if (!hydrated) void loadActive()
@@ -34,6 +36,24 @@ function ActiveWorkoutPage() {
   if (!session) return null
 
   const steps = flatSteps(session)
+  if (steps.length === 0) {
+    const handleDiscard = async () => {
+      await discard()
+      navigate({ to: '/' })
+    }
+    return (
+      <EmptyState
+        icon={Dumbbell}
+        title="В тренировке нет упражнений"
+        action={
+          <Button variant="outline" onClick={handleDiscard}>
+            Отменить тренировку
+          </Button>
+        }
+      />
+    )
+  }
+
   const idx = stepIndex(session, session.cursor)
   const { entryIndex, setIndex } = session.cursor
   const entry = session.entries[entryIndex]
