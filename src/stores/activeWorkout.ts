@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { sessionsRepo } from '@/db/repositories'
-import { flatSteps, stepIndex, type Step } from '@/domain/session'
+import {
+  filledSets,
+  flatSteps,
+  stepIndex,
+  type Step,
+} from '@/domain/session'
 import type {
   MetricType,
   SetResult,
@@ -91,6 +96,24 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
 
   async start(session) {
     cancelPendingSave()
+    // Never leave orphaned in-progress sessions behind: getActive() only
+    // surfaces the newest one and history only lists completed ones.
+    const others = (await sessionsRepo.listActive()).filter(
+      (s) => s.id !== session.id,
+    )
+    for (const s of others) {
+      if (filledSets(s) === 0) {
+        await sessionsRepo.remove(s.id)
+      } else {
+        // Keep recorded sets in history. The real finish time is unknown, so
+        // we deliberately use startedAt as finishedAt (documented assumption).
+        await sessionsRepo.save({
+          ...s,
+          status: 'completed',
+          finishedAt: s.startedAt,
+        })
+      }
+    }
     await sessionsRepo.save(session)
     set({ session, hydrated: true })
   },
