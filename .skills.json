@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skills": {
+    "alirezarezvani-senior-frontend": {
+      "version": "1.0.5",
+      "installedAt": "2026-11-09T16:24:50.036Z",
+      "platform": "cursor"
+    },
+    "code-review": {
+      "version": "1.0.0",
+      "installedAt": "2026-11-09T16:24:49.949Z",
+      "platform": "cursor",
+      "contentHash": "a36edc8e90bf772b3577c3819abc824edca4e5e434b843c23cce91836e91d00c"
+    }
+  }
+}

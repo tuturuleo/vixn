@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { useActiveWorkout } from './activeWorkout'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { flushPendingSave, useActiveWorkout } from './activeWorkout'
 import { buildSessionFromTemplate } from '@/domain/session'
 import { sessionsRepo } from '@/db/repositories'
 import { stores } from '@/db/storage'
@@ -26,6 +26,14 @@ const freshSession = () => buildSessionFromTemplate(template, { ex1: bench }, 1)
 beforeEach(async () => {
   await stores.sessions.clear()
   useActiveWorkout.setState({ session: null, hydrated: false })
+})
+
+afterEach(async () => {
+  try {
+    await flushPendingSave()
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 describe('activeWorkout store', () => {
@@ -77,5 +85,69 @@ describe('activeWorkout store', () => {
     expect(useActiveWorkout.getState().session).toBeNull()
     expect(await sessionsRepo.getActive()).toBeNull()
     expect(await sessionsRepo.listCompleted()).toHaveLength(1)
+  })
+
+  it('complete cancels a pending metric save', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const store = useActiveWorkout.getState()
+    await store.start(freshSession())
+    store.setMetric({ entryIndex: 0, setIndex: 2 }, 'weight', 60)
+
+    await store.complete()
+    vi.advanceTimersByTime(1000)
+    await vi.runAllTimersAsync()
+
+    expect(await sessionsRepo.getActive()).toBeNull()
+    const completed = await sessionsRepo.listCompleted()
+    expect(completed).toHaveLength(1)
+    expect(completed[0].status).toBe('completed')
+    expect(completed[0].entries[0].sets[2].values.weight).toBe(60)
+  })
+
+  it('discard cancels a pending metric save', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const store = useActiveWorkout.getState()
+    const session = freshSession()
+    await store.start(session)
+    store.setMetric({ entryIndex: 0, setIndex: 2 }, 'weight', 60)
+
+    await store.discard()
+    vi.advanceTimersByTime(1000)
+    await vi.runAllTimersAsync()
+
+    expect(await sessionsRepo.get(session.id)).toBeNull()
+  })
+
+  it('flushPendingSave immediately persists the latest pending session', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const store = useActiveWorkout.getState()
+    const session = freshSession()
+    await store.start(session)
+    store.setMetric({ entryIndex: 0, setIndex: 0 }, 'weight', 60)
+    store.setMetric({ entryIndex: 0, setIndex: 0 }, 'weight', 65)
+    store.setMetric({ entryIndex: 0, setIndex: 0 }, 'reps', 10)
+
+    await flushPendingSave()
+
+    const saved = await sessionsRepo.get(session.id)
+    expect(saved?.entries[0].sets[0].values).toEqual({ weight: 65, reps: 10 })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('start cancels the previous session\'s pending metric save', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const store = useActiveWorkout.getState()
+    const previous = freshSession()
+    await store.start(previous)
+    store.setMetric({ entryIndex: 0, setIndex: 0 }, 'weight', 60)
+
+    const next = freshSession()
+    await store.start(next)
+    await flushPendingSave()
+    vi.advanceTimersByTime(1000)
+    await vi.runAllTimersAsync()
+
+    expect(await sessionsRepo.get(next.id)).toEqual(next)
+    expect(await sessionsRepo.get(previous.id)).toEqual(previous)
   })
 })
