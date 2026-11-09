@@ -3,7 +3,7 @@ import { Check, Trash2, CalendarDays, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { sessionsRepo } from '@/db/repositories'
 import { formatDateTime, formatDuration } from '@/lib/datetime'
-import { formatMetricValue } from '@/domain/metrics'
+import { formatRecordedValues } from '@/domain/metrics'
 
 export const Route = createFileRoute('/workout/$sessionId')({
   loader: async ({ params }) => {
@@ -64,10 +64,7 @@ function SessionSummaryPage() {
                       {empty ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
-                        entry.metrics
-                          .filter((m) => set.values[m] != null)
-                          .map((m) => formatMetricValue(m, set.values[m]!))
-                          .join(' · ')
+                        formatRecordedValues(entry.metrics, set.values)
                       )}
                     </span>
                   </li>

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildSessionFromTemplate, filledSets, totalSets } from './session'
+import {
+  buildSessionFromTemplate,
+  filledSets,
+  templateSetCount,
+  totalSets,
+} from './session'
 import type { Exercise, WorkoutTemplate } from './schemas'
 
 const bench: Exercise = {
@@ -83,5 +88,10 @@ describe('set counters', () => {
 
     session.entries[0].sets[0].values = { weight: 60, reps: 10 }
     expect(filledSets(session)).toBe(1)
+  })
+
+  it('counts planned sets in a template', () => {
+    expect(templateSetCount(template)).toBe(5)
+    expect(templateSetCount({ ...template, items: [] })).toBe(0)
   })
 })

@@ -8,7 +8,7 @@ import {
   exercisesRepo,
   sessionsRepo,
 } from '@/db/repositories'
-import { buildSessionFromTemplate } from '@/domain/session'
+import { buildSessionFromTemplate, templateSetCount } from '@/domain/session'
 import { setsWord } from '@/lib/plural'
 import { useActiveWorkout } from '@/stores/activeWorkout'
 import type { WorkoutTemplate } from '@/domain/schemas'
@@ -71,7 +71,7 @@ function WorkoutStartPage() {
       ) : (
         <ul className="flex flex-col gap-2">
           {templates.map((template) => {
-            const sets = template.items.reduce((n, i) => n + i.sets, 0)
+            const sets = templateSetCount(template)
             return (
               <li key={template.id}>
                 <button
