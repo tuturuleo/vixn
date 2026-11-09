@@ -35,3 +35,17 @@ export function formatSetLine(
     .map((m) => (values[m] != null ? formatMetricValue(m, values[m]!) : '—'))
     .join(' · ')
 }
+
+/**
+ * Summary of only the recorded values, e.g. "60 кг · 10". Missing metrics are
+ * skipped; returns '' when nothing is recorded.
+ */
+export function formatRecordedValues(
+  metrics: readonly MetricType[],
+  values: Partial<Record<MetricType, number>>,
+): string {
+  return metrics
+    .filter((m) => values[m] != null)
+    .map((m) => formatMetricValue(m, values[m]!))
+    .join(' · ')
+}

@@ -16,6 +16,7 @@ import {
   buildSeries,
   type ExerciseStat,
 } from '@/domain/progress'
+import { totalSets } from '@/domain/session'
 import { METRIC_META, type MetricType } from '@/domain/metrics'
 import type { WorkoutSession } from '@/domain/schemas'
 import { formatDateTime } from '@/lib/datetime'
@@ -185,7 +186,7 @@ function HistoryTab({ sessions }: { sessions: WorkoutSession[] }) {
   return (
     <ul className="flex flex-col gap-2">
       {sessions.map((session) => {
-        const sets = session.entries.reduce((n, e) => n + e.sets.length, 0)
+        const sets = totalSets(session)
         return (
           <li key={session.id}>
             <Link

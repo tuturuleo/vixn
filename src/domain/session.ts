@@ -48,6 +48,11 @@ export function totalSets(session: WorkoutSession): number {
   return session.entries.reduce((sum, e) => sum + e.sets.length, 0)
 }
 
+/** Total number of planned sets across all items in a template. */
+export function templateSetCount(template: WorkoutTemplate): number {
+  return template.items.reduce((sum, i) => sum + i.sets, 0)
+}
+
 /** Count of sets that have at least one recorded value. */
 export function filledSets(session: WorkoutSession): number {
   return session.entries.reduce(
