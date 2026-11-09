@@ -10,13 +10,27 @@ import type {
 // Debounced persistence: value edits fire on every keystroke, navigation is
 // saved immediately. Either way the in-progress session survives a reload.
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingSession: WorkoutSession | null = null
+
+function cancelPendingSave() {
+  if (saveTimer !== null) clearTimeout(saveTimer)
+  saveTimer = null
+  pendingSession = null
+}
+
+export async function flushPendingSave(): Promise<void> {
+  const session = pendingSession
+  cancelPendingSave()
+  if (session) await sessionsRepo.save(session)
+}
+
 function persist(session: WorkoutSession, immediate: boolean) {
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-    saveTimer = null
-  }
+  cancelPendingSave()
   if (immediate) void sessionsRepo.save(session)
-  else saveTimer = setTimeout(() => void sessionsRepo.save(session), 400)
+  else {
+    pendingSession = session
+    saveTimer = setTimeout(() => void flushPendingSave(), 400)
+  }
 }
 
 /** Replaces one set within a session, returning a new session object. */
@@ -76,6 +90,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
   },
 
   async start(session) {
+    cancelPendingSave()
     await sessionsRepo.save(session)
     set({ session, hydrated: true })
   },
@@ -123,6 +138,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
   },
 
   async complete() {
+    cancelPendingSave()
     const session = get().session
     if (!session) return null
     const completed: WorkoutSession = {
@@ -136,6 +152,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
   },
 
   async discard() {
+    cancelPendingSave()
     const session = get().session
     if (session) await sessionsRepo.remove(session.id)
     set({ session: null })
