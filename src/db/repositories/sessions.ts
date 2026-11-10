@@ -18,11 +18,16 @@ export const sessionsRepo = {
 
   /** The current unfinished workout, if any (most recently started wins). */
   async getActive(): Promise<WorkoutSession | null> {
+    const active = await sessionsRepo.listActive()
+    return active[0] ?? null
+  },
+
+  /** All unfinished sessions, most recently started first. */
+  async listActive(): Promise<WorkoutSession[]> {
     const all = await col.list()
-    const active = all
+    return all
       .filter((s) => s.status === 'in_progress')
       .sort((a, b) => b.startedAt - a.startedAt)
-    return active[0] ?? null
   },
 
   /** Completed sessions, newest finished first — the workout history. */
