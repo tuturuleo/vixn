@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Plus, Minus, X, Trash2, Dumbbell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,8 @@ export function TemplateEditor({
   const [items, setItems] = useState<DraftItem[]>(initialItems)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const pending = useRef(false)
 
   const valid = name.trim().length > 0 && items.length > 0
 
@@ -58,21 +60,54 @@ export function TemplateEditor({
     setItems((prev) => prev.filter((_, i) => i !== index))
 
   const handleSave = async () => {
-    if (!valid || saving) return
+    if (!valid || pending.current) return
+    pending.current = true
     setSaving(true)
-    await onSave({
-      name: name.trim(),
-      items: items.map(({ exerciseId, sets }) => ({ exerciseId, sets })),
-    })
-    navigate({ to: '/templates' })
+    setError(null)
+    try {
+      await onSave({
+        name: name.trim(),
+        items: items.map(({ exerciseId, sets }) => ({ exerciseId, sets })),
+      })
+      navigate({ to: '/templates' })
+    } catch {
+      setError('Не удалось сохранить тренировку. Попробуйте ещё раз.')
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
   }
 
-  const back = () => navigate({ to: '/templates' })
+  const handleDelete = async () => {
+    if (!onDelete || pending.current) return
+    pending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await onDelete()
+      navigate({ to: '/templates' })
+    } catch {
+      setError('Не удалось удалить тренировку. Попробуйте ещё раз.')
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
+  }
+
+  const back = () => {
+    if (!pending.current) navigate({ to: '/templates' })
+  }
 
   return (
     <>
       <header className="mb-4 flex items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={back} aria-label="Назад">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={back}
+          disabled={saving}
+          aria-label="Назад"
+        >
           <ArrowLeft className="size-5" />
         </Button>
         <h1 className="text-xl font-bold tracking-tight">{title}</h1>
@@ -171,6 +206,10 @@ export function TemplateEditor({
           )}
         </div>
 
+        {error && (
+          <p role="alert" className="text-sm text-destructive">{error}</p>
+        )}
+
         <Button size="lg" onClick={handleSave} disabled={!valid || saving}>
           Сохранить тренировку
         </Button>
@@ -179,10 +218,8 @@ export function TemplateEditor({
           <Button
             variant="ghost"
             className="text-destructive hover:text-destructive"
-            onClick={async () => {
-              await onDelete()
-              navigate({ to: '/templates' })
-            }}
+            onClick={handleDelete}
+            disabled={saving}
           >
             <Trash2 className="size-4" />
             Удалить тренировку

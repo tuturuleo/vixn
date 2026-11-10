@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import {
   Drawer,
@@ -32,27 +32,60 @@ export function ExerciseFormSheet({
   const [name, setName] = useState('')
   const [metrics, setMetrics] = useState<MetricType[]>(['weight', 'reps'])
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const pending = useRef(false)
 
   // Sync local form state each time the sheet opens.
   useEffect(() => {
     if (open) {
       setName(exercise?.name ?? '')
       setMetrics(exercise?.metrics ?? ['weight', 'reps'])
-      setSaving(false)
+      setError(null)
     }
   }, [open, exercise])
 
   const valid = name.trim().length > 0 && metrics.length > 0
 
   const handleSave = async () => {
-    if (!valid || saving) return
+    if (!valid || pending.current) return
+    pending.current = true
     setSaving(true)
-    await onSubmit({ name: name.trim(), metrics })
-    onOpenChange(false)
+    setError(null)
+    try {
+      await onSubmit({ name: name.trim(), metrics })
+      onOpenChange(false)
+    } catch {
+      setError('Не удалось сохранить упражнение. Попробуйте ещё раз.')
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
+  }
+
+  const handleArchive = async () => {
+    if (!exercise || pending.current) return
+    pending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await onArchive(exercise.id)
+      onOpenChange(false)
+    } catch {
+      setError('Не удалось архивировать упражнение. Попробуйте ещё раз.')
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
   }
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
+    <Drawer
+      open={open}
+      dismissible={!saving}
+      onOpenChange={(nextOpen) => {
+        if (!pending.current) onOpenChange(nextOpen)
+      }}
+    >
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>
@@ -82,6 +115,9 @@ export function ExerciseFormSheet({
         </div>
 
         <DrawerFooter>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">{error}</p>
+          )}
           <Button size="lg" onClick={handleSave} disabled={!valid || saving}>
             {exercise ? 'Сохранить' : 'Добавить'}
           </Button>
@@ -89,10 +125,8 @@ export function ExerciseFormSheet({
             <Button
               variant="ghost"
               className="text-destructive hover:text-destructive"
-              onClick={async () => {
-                await onArchive(exercise.id)
-                onOpenChange(false)
-              }}
+              onClick={handleArchive}
+              disabled={saving}
             >
               <Trash2 className="size-4" />
               Архивировать
