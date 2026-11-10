@@ -39,6 +39,32 @@ describe('exercisesRepo', () => {
     expect(updated.metrics).toEqual(['weight', 'reps'])
     expect(updated.updatedAt).toBeGreaterThanOrEqual(ex.updatedAt)
   })
+
+  it('restore preserves the id, template and session and returns the exercise to list()', async () => {
+    const ex = await exercisesRepo.create({ name: 'Жим', metrics: ['weight', 'reps'] })
+    const template = await templatesRepo.create({
+      name: 'Грудь',
+      items: [{ exerciseId: ex.id, sets: 2 }],
+    })
+    const session = await sessionsRepo.save(buildSessionFromTemplate(template, { [ex.id]: ex }))
+    await exercisesRepo.archive(ex.id)
+    expect(await exercisesRepo.list()).toEqual([])
+
+    const restored = await exercisesRepo.restore(ex.id)
+
+    expect(restored).toEqual({ ...ex, archived: false, updatedAt: restored.updatedAt })
+    expect(restored.updatedAt).toBeGreaterThanOrEqual(ex.updatedAt)
+    expect(await exercisesRepo.get(ex.id)).toEqual(restored)
+    expect(await exercisesRepo.list()).toEqual([restored])
+    expect(await exercisesRepo.listAll()).toEqual([restored])
+    expect(await templatesRepo.get(template.id)).toEqual(template)
+    expect(await sessionsRepo.get(session.id)).toEqual(session)
+    const newTemplate = await templatesRepo.create({
+      name: 'Новая тренировка',
+      items: [{ exerciseId: (await exercisesRepo.list())[0].id, sets: 1 }],
+    })
+    expect(newTemplate.items[0].exerciseId).toBe(ex.id)
+  })
 })
 
 describe('templatesRepo', () => {
