@@ -208,4 +208,19 @@ describe('activeWorkout store', () => {
     expect(await sessionsRepo.get(session.id)).toBeNull()
     expect(await sessionsRepo.listActive()).toHaveLength(0)
   })
+
+  it('loadActive repairs an out-of-range cursor and persists it', async () => {
+    const broken = {
+      ...freshSession(),
+      cursor: { entryIndex: 5, setIndex: 9 },
+    }
+    await stores.sessions.setItem(broken.id, broken)
+
+    await useActiveWorkout.getState().loadActive()
+
+    const s = useActiveWorkout.getState().session!
+    expect(s.cursor).toEqual({ entryIndex: 0, setIndex: 2 })
+    expect(s.entries[s.cursor.entryIndex].sets[s.cursor.setIndex]).toBeDefined()
+    expect((await sessionsRepo.get(broken.id))?.cursor).toEqual(s.cursor)
+  })
 })

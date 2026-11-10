@@ -3,6 +3,7 @@ import { sessionsRepo } from '@/db/repositories'
 import {
   filledSets,
   flatSteps,
+  normalizeCursor,
   stepIndex,
   type Step,
 } from '@/domain/session'
@@ -90,12 +91,15 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
   hydrated: false,
 
   async loadActive() {
-    const session = await sessionsRepo.getActive()
+    const stored = await sessionsRepo.getActive()
+    const session = stored ? normalizeCursor(stored) : null
+    if (session && session !== stored) await sessionsRepo.save(session)
     set({ session, hydrated: true })
   },
 
-  async start(session) {
+  async start(raw) {
     cancelPendingSave()
+    const session = normalizeCursor(raw)
     // Never leave orphaned in-progress sessions behind: getActive() only
     // surfaces the newest one and history only lists completed ones.
     const others = (await sessionsRepo.listActive()).filter(

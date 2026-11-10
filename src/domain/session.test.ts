@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildSessionFromTemplate,
   filledSets,
+  normalizeCursor,
   templateSetCount,
   totalSets,
 } from './session'
@@ -93,5 +94,38 @@ describe('set counters', () => {
   it('counts planned sets in a template', () => {
     expect(templateSetCount(template)).toBe(5)
     expect(templateSetCount({ ...template, items: [] })).toBe(0)
+  })
+})
+
+describe('normalizeCursor', () => {
+  const base = buildSessionFromTemplate(template, exercisesById)
+
+  it('returns the same session for a valid cursor', () => {
+    const s = { ...base, cursor: { entryIndex: 1, setIndex: 1 } }
+    expect(normalizeCursor(s)).toBe(s)
+  })
+
+  it('moves an out-of-range entry index to the last step', () => {
+    const s = { ...base, cursor: { entryIndex: 5, setIndex: 9 } }
+    expect(normalizeCursor(s).cursor).toEqual({ entryIndex: 1, setIndex: 1 })
+  })
+
+  it('clamps an out-of-range set index to the last set of the entry', () => {
+    const s = { ...base, cursor: { entryIndex: 0, setIndex: 7 } }
+    expect(normalizeCursor(s).cursor).toEqual({ entryIndex: 0, setIndex: 2 })
+  })
+
+  it('skips to the next entry with sets when the entry has none', () => {
+    const s = {
+      ...base,
+      entries: [{ ...base.entries[0], sets: [] }, base.entries[1]],
+      cursor: { entryIndex: 0, setIndex: 0 },
+    }
+    expect(normalizeCursor(s).cursor).toEqual({ entryIndex: 1, setIndex: 0 })
+  })
+
+  it('resets the cursor when there are no entries', () => {
+    const s = { ...base, entries: [], cursor: { entryIndex: 3, setIndex: 4 } }
+    expect(normalizeCursor(s).cursor).toEqual({ entryIndex: 0, setIndex: 0 })
   })
 })
