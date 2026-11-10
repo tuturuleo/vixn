@@ -15,6 +15,8 @@ exercise — all stored locally, works offline.
   prefill-from-previous-set.
 - **Прогресс** — per-exercise line chart with a metric switcher (cross-workout),
   plus full workout history.
+- **Резервная копия** — JSON export and import of exercises, templates and sessions,
+  merging restored data with existing records.
 
 ## Stack
 
