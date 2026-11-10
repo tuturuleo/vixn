@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { X, ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { X, ArrowLeft, ArrowRight, Check, Dumbbell, Trash2 } from 'lucide-react'
+import { EmptyState } from '@/components/layout/EmptyState'
 import { Button } from '@/components/ui/button'
 import { NumberField } from '@/features/workout/NumberField'
 import { useActiveWorkout } from '@/stores/activeWorkout'
@@ -21,6 +22,9 @@ function ActiveWorkoutPage() {
   const next = useActiveWorkout((s) => s.next)
   const prev = useActiveWorkout((s) => s.prev)
   const complete = useActiveWorkout((s) => s.complete)
+  const discard = useActiveWorkout((s) => s.discard)
+  // Set while discarding so the redirect below doesn't race navigate('/').
+  const discardingRef = useRef(false)
 
   useEffect(() => {
     if (!hydrated) void loadActive()
@@ -28,12 +32,33 @@ function ActiveWorkoutPage() {
 
   // After hydration, bounce out if there is nothing to record.
   useEffect(() => {
-    if (hydrated && !session) navigate({ to: '/workout/start' })
+    if (hydrated && !session && !discardingRef.current) {
+      navigate({ to: '/workout/start' })
+    }
   }, [hydrated, session, navigate])
 
   if (!session) return null
 
   const steps = flatSteps(session)
+  if (steps.length === 0) {
+    const handleDiscard = async () => {
+      discardingRef.current = true
+      await discard()
+      navigate({ to: '/' })
+    }
+    return (
+      <EmptyState
+        icon={Dumbbell}
+        title="В тренировке нет упражнений"
+        action={
+          <Button variant="outline" onClick={handleDiscard}>
+            Отменить тренировку
+          </Button>
+        }
+      />
+    )
+  }
+
   const idx = stepIndex(session, session.cursor)
   const { entryIndex, setIndex } = session.cursor
   const entry = session.entries[entryIndex]
@@ -46,6 +71,15 @@ function ActiveWorkoutPage() {
     if (!isLast) return next()
     const done = await complete()
     if (done) navigate({ to: '/workout/$sessionId', params: { sessionId: done.id } })
+  }
+
+  const handleDiscard = async () => {
+    if (!window.confirm('Отменить тренировку? Записанные подходы будут удалены.')) {
+      return
+    }
+    discardingRef.current = true
+    await discard()
+    navigate({ to: '/' })
   }
 
   return (
@@ -65,6 +99,15 @@ function ActiveWorkoutPage() {
         <span className="text-sm tabular-nums text-muted-foreground">
           {idx + 1}/{steps.length}
         </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleDiscard}
+          aria-label="Отменить"
+          title="Отменить"
+        >
+          <Trash2 className="size-5" />
+        </Button>
       </header>
 
       <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-muted">

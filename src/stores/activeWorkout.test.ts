@@ -148,6 +148,79 @@ describe('activeWorkout store', () => {
     await vi.runAllTimersAsync()
 
     expect(await sessionsRepo.get(next.id)).toEqual(next)
-    expect(await sessionsRepo.get(previous.id)).toEqual(previous)
+    // The cancelled save never landed, so the empty previous session is dropped.
+    expect(await sessionsRepo.get(previous.id)).toBeNull()
+  })
+
+  it('start removes an empty orphaned in-progress session', async () => {
+    const orphan = freshSession()
+    await sessionsRepo.save(orphan)
+
+    const next = freshSession()
+    await useActiveWorkout.getState().start(next)
+
+    const active = await sessionsRepo.listActive()
+    expect(active).toHaveLength(1)
+    expect(active[0].id).toBe(next.id)
+    expect(await sessionsRepo.get(orphan.id)).toBeNull()
+  })
+
+  it('start moves an orphaned session with recorded sets to history', async () => {
+    const base = freshSession()
+    const orphan = {
+      ...base,
+      entries: base.entries.map((e, ei) =>
+        ei === 0
+          ? {
+              ...e,
+              sets: e.sets.map((s, si) =>
+                si === 0 ? { ...s, values: { weight: 60, reps: 10 } } : s,
+              ),
+            }
+          : e,
+      ),
+    }
+    await sessionsRepo.save(orphan)
+
+    const next = freshSession()
+    await useActiveWorkout.getState().start(next)
+
+    const completed = await sessionsRepo.listCompleted()
+    expect(completed).toHaveLength(1)
+    expect(completed[0].id).toBe(orphan.id)
+    expect(completed[0].finishedAt).toBe(orphan.startedAt)
+    expect(completed[0].entries[0].sets[0].values).toEqual({
+      weight: 60,
+      reps: 10,
+    })
+    const active = await sessionsRepo.listActive()
+    expect(active.map((s) => s.id)).toEqual([next.id])
+  })
+
+  it('discard removes the session from storage', async () => {
+    const store = useActiveWorkout.getState()
+    const session = freshSession()
+    await store.start(session)
+
+    await useActiveWorkout.getState().discard()
+
+    expect(useActiveWorkout.getState().session).toBeNull()
+    expect(await sessionsRepo.get(session.id)).toBeNull()
+    expect(await sessionsRepo.listActive()).toHaveLength(0)
+  })
+
+  it('loadActive repairs an out-of-range cursor and persists it', async () => {
+    const broken = {
+      ...freshSession(),
+      cursor: { entryIndex: 5, setIndex: 9 },
+    }
+    await stores.sessions.setItem(broken.id, broken)
+
+    await useActiveWorkout.getState().loadActive()
+
+    const s = useActiveWorkout.getState().session!
+    expect(s.cursor).toEqual({ entryIndex: 0, setIndex: 2 })
+    expect(s.entries[s.cursor.entryIndex].sets[s.cursor.setIndex]).toBeDefined()
+    expect((await sessionsRepo.get(broken.id))?.cursor).toEqual(s.cursor)
   })
 })

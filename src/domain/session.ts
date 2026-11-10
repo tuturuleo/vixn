@@ -82,3 +82,30 @@ export function stepIndex(session: WorkoutSession, cursor: Step): number {
     (s) => s.entryIndex === cursor.entryIndex && s.setIndex === cursor.setIndex,
   )
 }
+
+/**
+ * Clamps a possibly corrupt cursor onto an existing step. Returns the same
+ * session object when the cursor already addresses a real set.
+ */
+export function normalizeCursor(session: WorkoutSession): WorkoutSession {
+  const { entryIndex, setIndex } = session.cursor
+  const entry = session.entries[entryIndex]
+  if (entry?.sets[setIndex]) return session
+
+  const steps = flatSteps(session)
+  let target: Step = { entryIndex: 0, setIndex: 0 }
+  if (steps.length > 0) {
+    target = steps[steps.length - 1]
+    if (entry) {
+      target =
+        entry.sets.length > 0
+          ? { entryIndex, setIndex: entry.sets.length - 1 }
+          : (steps.find((s) => s.entryIndex > entryIndex) ?? target)
+    }
+  }
+
+  if (target.entryIndex === entryIndex && target.setIndex === setIndex) {
+    return session
+  }
+  return { ...session, cursor: target }
+}
