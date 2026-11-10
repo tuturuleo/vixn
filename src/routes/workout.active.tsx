@@ -138,7 +138,7 @@ function ActiveWorkoutPage() {
         <div className="mt-6 flex flex-col gap-5">
           {entry.metrics.map((metric) => (
             <NumberField
-              key={metric}
+              key={`${session.id}:${entryIndex}:${setIndex}:${metric}`}
               metric={metric}
               value={set.values[metric] ?? null}
               onChange={(value) =>

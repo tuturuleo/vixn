@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { METRIC_META, type MetricType } from '@/domain/metrics'
@@ -14,13 +15,36 @@ export function NumberField({
   const meta = METRIC_META[metric]
 
   const clamp = (n: number) => Math.max(0, Number(n.toFixed(meta.precision)))
-  const step = (delta: number) => onChange(clamp((value ?? 0) + delta))
+  const formattedValue = value === null ? '' : String(clamp(value))
+  const [draft, setDraft] = useState(formattedValue)
+  const lastEmitted = useRef(value)
+
+  useEffect(() => {
+    // An autosave echo must not erase a trailing decimal separator.
+    if (value !== lastEmitted.current) {
+      setDraft(formattedValue)
+      lastEmitted.current = value
+    }
+  }, [value, formattedValue])
+
+  const emit = (next: number | null) => {
+    lastEmitted.current = next
+    onChange(next)
+  }
+
+  const step = (delta: number) => {
+    const next = clamp((value ?? 0) + delta)
+    if (!Number.isFinite(next)) return
+    setDraft(String(next))
+    emit(next)
+  }
 
   const handleInput = (raw: string) => {
+    setDraft(raw)
     const normalized = raw.replace(',', '.').trim()
-    if (normalized === '') return onChange(null)
+    if (normalized === '') return emit(null)
     const n = Number(normalized)
-    if (Number.isFinite(n)) onChange(clamp(n))
+    if (Number.isFinite(n)) emit(clamp(n))
   }
 
   return (
@@ -44,8 +68,9 @@ export function NumberField({
         </Button>
         <input
           inputMode="decimal"
-          value={value ?? ''}
+          value={draft}
           onChange={(e) => handleInput(e.target.value)}
+          onBlur={() => setDraft(formattedValue)}
           placeholder="—"
           className="h-12 min-w-0 flex-1 rounded-md border border-input bg-transparent text-center text-2xl font-semibold tabular-nums outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
         />
