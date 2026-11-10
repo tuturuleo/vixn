@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { Plus, Activity, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -11,15 +11,20 @@ import { METRIC_META } from '@/domain/metrics'
 import type { Exercise } from '@/domain/schemas'
 
 export const Route = createFileRoute('/exercises')({
-  loader: () => exercisesRepo.list(),
+  loader: () => exercisesRepo.listAll(),
   component: ExercisesPage,
 })
 
 function ExercisesPage() {
-  const exercises = Route.useLoaderData()
+  const allExercises = Route.useLoaderData()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Exercise | null>(null)
+  const [showArchive, setShowArchive] = useState(false)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const restorePending = useRef(false)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const exercises = allExercises.filter((exercise) => exercise.archived === showArchive)
 
   const openCreate = () => {
     setEditing(null)
@@ -41,6 +46,22 @@ function ExercisesPage() {
     await router.invalidate()
   }
 
+  const handleRestore = async (id: string) => {
+    if (restorePending.current) return
+    restorePending.current = true
+    setRestoringId(id)
+    setRestoreError(null)
+    try {
+      await exercisesRepo.restore(id)
+      await router.invalidate()
+    } catch {
+      setRestoreError(id)
+    } finally {
+      restorePending.current = false
+      setRestoringId(null)
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -53,7 +74,54 @@ function ExercisesPage() {
         }
       />
 
-      {exercises.length === 0 ? (
+      <div role="group" aria-label="Список упражнений" className="mb-4 flex gap-2">
+        <Button
+          variant={showArchive ? 'outline' : 'secondary'}
+          aria-pressed={!showArchive}
+          onClick={() => setShowArchive(false)}
+        >
+          Активные
+        </Button>
+        <Button
+          variant={showArchive ? 'secondary' : 'outline'}
+          aria-pressed={showArchive}
+          onClick={() => setShowArchive(true)}
+        >
+          Архив
+        </Button>
+      </div>
+
+      {showArchive ? (
+        exercises.length === 0 ? (
+          <EmptyState
+            icon={Activity}
+            title="Архив пуст"
+            description="Здесь появятся архивные упражнения"
+          />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {exercises.map((exercise) => (
+              <li key={exercise.id} className="rounded-xl border border-border bg-card px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <p className="min-w-0 flex-1 break-words font-medium">{exercise.name}</p>
+                  <Button
+                    variant="outline"
+                    disabled={restoringId !== null}
+                    onClick={() => handleRestore(exercise.id)}
+                  >
+                    {restoringId === exercise.id ? 'Восстановление…' : 'Восстановить'}
+                  </Button>
+                </div>
+                {restoreError === exercise.id && (
+                  <p role="alert" className="mt-2 text-sm text-destructive">
+                    Не удалось восстановить упражнение. Нажмите «Восстановить», чтобы повторить.
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : exercises.length === 0 ? (
         <EmptyState
           icon={Activity}
           title="Пока нет упражнений"
