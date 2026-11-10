@@ -85,6 +85,26 @@ describe('sessionsRepo', () => {
     expect(history).toHaveLength(1)
     expect(history[0].id).toBe(session.id)
   })
+
+  it('listActive returns all in-progress sessions, newest first', async () => {
+    const ex = await exercisesRepo.create({ name: 'Жим', metrics: ['reps'] })
+    const template = await templatesRepo.create({
+      name: 'Грудь',
+      items: [{ exerciseId: ex.id, sets: 1 }],
+    })
+    const build = (startedAt: number) =>
+      buildSessionFromTemplate(template, { [ex.id]: ex }, startedAt)
+
+    const older = build(1000)
+    const newer = build(2000)
+    const done = build(3000)
+    await sessionsRepo.save(older)
+    await sessionsRepo.save(newer)
+    await sessionsRepo.save({ ...done, status: 'completed', finishedAt: 4000 })
+
+    const active = await sessionsRepo.listActive()
+    expect(active.map((s) => s.id)).toEqual([newer.id, older.id])
+  })
 })
 
 describe('createCollection resilience', () => {
