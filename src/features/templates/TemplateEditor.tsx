@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, Plus, Minus, X, Trash2, Dumbbell } from 'lucide-react'
+import { ArrowLeft, ArrowUp, ArrowDown, Plus, Minus, X, Trash2, Dumbbell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -58,6 +58,19 @@ export function TemplateEditor({
 
   const removeItem = (index: number) =>
     setItems((prev) => prev.filter((_, i) => i !== index))
+
+  const moveItem = (index: number, direction: -1 | 1) => {
+    if (pending.current) return
+    setItems((prev) => {
+      const target = index + direction
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      const moved = next[index]
+      next[index] = next[target]
+      next[target] = moved
+      return next
+    })
+  }
 
   const handleSave = async () => {
     if (!valid || pending.current) return
@@ -146,6 +159,28 @@ export function TemplateEditor({
                   key={`${item.exerciseId}-${index}`}
                   className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-3"
                 >
+                  <div className="flex flex-col gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9"
+                      onClick={() => moveItem(index, -1)}
+                      disabled={saving || index === 0}
+                      aria-label={`Переместить вверх: ${item.name}, строка ${index + 1}`}
+                    >
+                      <ArrowUp className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9"
+                      onClick={() => moveItem(index, 1)}
+                      disabled={saving || index === items.length - 1}
+                      aria-label={`Переместить вниз: ${item.name}, строка ${index + 1}`}
+                    >
+                      <ArrowDown className="size-4" />
+                    </Button>
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{item.name}</p>
                     <p className="text-xs text-muted-foreground">

@@ -68,6 +68,43 @@ describe('exercisesRepo', () => {
 })
 
 describe('templatesRepo', () => {
+  it('preserves reordered items and their sets after saving, reading and building a session', async () => {
+    const press = await exercisesRepo.create({ name: 'Жим', metrics: ['weight', 'reps'] })
+    const squat = await exercisesRepo.create({ name: 'Присед', metrics: ['reps'] })
+    const template = await templatesRepo.create({
+      name: 'Программа',
+      items: [
+        { exerciseId: press.id, sets: 2 },
+        { exerciseId: squat.id, sets: 3 },
+        { exerciseId: press.id, sets: 5 },
+      ],
+    })
+
+    await templatesRepo.update(template.id, {
+      name: template.name,
+      items: [template.items[2], template.items[0], template.items[1]],
+    })
+    const saved = await templatesRepo.get(template.id)
+    expect(saved?.items).toEqual([
+      { exerciseId: press.id, sets: 5, order: 0 },
+      { exerciseId: press.id, sets: 2, order: 1 },
+      { exerciseId: squat.id, sets: 3, order: 2 },
+    ])
+    if (!saved) throw new Error('Saved template not found')
+
+    const session = buildSessionFromTemplate(saved, { [press.id]: press, [squat.id]: squat })
+    expect(session.entries.map((entry) => ({
+      exerciseId: entry.exerciseId,
+      name: entry.exerciseName,
+      sets: entry.sets.length,
+      order: entry.order,
+    }))).toEqual([
+      { exerciseId: press.id, name: 'Жим', sets: 5, order: 0 },
+      { exerciseId: press.id, name: 'Жим', sets: 2, order: 1 },
+      { exerciseId: squat.id, name: 'Присед', sets: 3, order: 2 },
+    ])
+  })
+
   it('assigns order from array position', async () => {
     const t = await templatesRepo.create({
       name: 'Ноги',
