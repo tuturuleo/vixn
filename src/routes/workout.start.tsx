@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, Link, useRouter } from '@tanstack/react-router'
 import { Play, ListChecks, History } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/layout/EmptyState'
@@ -29,11 +29,13 @@ export const Route = createFileRoute('/workout/start')({
 function WorkoutStartPage() {
   const { templates, exercisesById, active } = Route.useLoaderData()
   const navigate = useNavigate()
+  const router = useRouter()
   const start = useActiveWorkout((s) => s.start)
 
   const handlePick = async (template: WorkoutTemplate) => {
     const session = buildSessionFromTemplate(template, exercisesById)
     await start(session)
+    await router.invalidate()
     navigate({ to: '/workout/active' })
   }
 
