@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate, useRouter } from '@tanstack/react-router'
 import { Check, Trash2, CalendarDays, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { sessionsRepo } from '@/db/repositories'
@@ -17,6 +17,7 @@ export const Route = createFileRoute('/workout/$sessionId')({
 function SessionSummaryPage() {
   const session = Route.useLoaderData()
   const navigate = useNavigate()
+  const router = useRouter()
   const finished = session.finishedAt ?? session.startedAt
 
   return (
@@ -84,6 +85,7 @@ function SessionSummaryPage() {
           className="text-destructive hover:text-destructive"
           onClick={async () => {
             await sessionsRepo.remove(session.id)
+            await router.invalidate()
             navigate({ to: '/progress' })
           }}
         >

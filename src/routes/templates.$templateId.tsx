@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { TemplateEditor } from '@/features/templates/TemplateEditor'
 import { templatesRepo, exercisesRepo, type TemplateInput } from '@/db/repositories'
 
@@ -24,13 +24,16 @@ export const Route = createFileRoute('/templates/$templateId')({
 })
 
 function EditTemplatePage() {
+  const router = useRouter()
   const { template, exercises, items } = Route.useLoaderData()
 
   const handleSave = async (input: TemplateInput) => {
     await templatesRepo.update(template.id, input)
+    await router.invalidate()
   }
   const handleDelete = async () => {
     await templatesRepo.remove(template.id)
+    await router.invalidate()
   }
 
   return (
