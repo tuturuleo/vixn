@@ -17,6 +17,20 @@ import type {
 // saved immediately. Either way the in-progress session survives a reload.
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSession: WorkoutSession | null = null
+let saveQueue: Promise<void> = Promise.resolve()
+const savesInFlight = new Set<Promise<WorkoutSession>>()
+
+function saveSession(session: WorkoutSession) {
+  // Keep autosaves in edit order, including writes already started by a timer
+  // or cursor navigation when a backup import asks to flush.
+  const save = saveQueue.then(() => sessionsRepo.save(session))
+  savesInFlight.add(save)
+  saveQueue = save.then(
+    () => { savesInFlight.delete(save) },
+    () => { savesInFlight.delete(save) },
+  )
+  return save
+}
 
 function cancelPendingSave() {
   if (saveTimer !== null) clearTimeout(saveTimer)
@@ -27,12 +41,13 @@ function cancelPendingSave() {
 export async function flushPendingSave(): Promise<void> {
   const session = pendingSession
   cancelPendingSave()
-  if (session) await sessionsRepo.save(session)
+  if (session) saveSession(session)
+  await Promise.all(savesInFlight)
 }
 
 function persist(session: WorkoutSession, immediate: boolean) {
   cancelPendingSave()
-  if (immediate) void sessionsRepo.save(session)
+  if (immediate) void saveSession(session)
   else {
     pendingSession = session
     saveTimer = setTimeout(() => void flushPendingSave(), 400)
@@ -99,6 +114,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
 
   async start(raw) {
     cancelPendingSave()
+    await flushPendingSave()
     const session = normalizeCursor(raw)
     // Never leave orphaned in-progress sessions behind: getActive() only
     // surfaces the newest one and history only lists completed ones.
@@ -166,6 +182,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
 
   async complete() {
     cancelPendingSave()
+    await flushPendingSave()
     const session = get().session
     if (!session) return null
     const completed: WorkoutSession = {
@@ -180,6 +197,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>((set, get) => ({
 
   async discard() {
     cancelPendingSave()
+    await flushPendingSave()
     const session = get().session
     if (session) await sessionsRepo.remove(session.id)
     set({ session: null })

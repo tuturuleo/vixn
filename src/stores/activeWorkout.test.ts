@@ -3,6 +3,8 @@ import { flushPendingSave, useActiveWorkout } from './activeWorkout'
 import { buildSessionFromTemplate } from '@/domain/session'
 import { sessionsRepo } from '@/db/repositories'
 import { stores } from '@/db/storage'
+import { exportAll } from '@/db/backup'
+import { importBackup } from './importBackup'
 import type { Exercise, WorkoutTemplate } from '@/domain/schemas'
 
 const bench: Exercise = {
@@ -33,7 +35,98 @@ afterEach(async () => {
     await flushPendingSave()
   } finally {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   }
+})
+
+describe('backup import persistence ordering', () => {
+  it('selects the newest active session and normalizes its cursor after import', async () => {
+    useActiveWorkout.setState({ hydrated: true, session: null })
+    const older = freshSession()
+    const newest = { ...freshSession(), startedAt: 2, cursor: { entryIndex: 5, setIndex: 9 } }
+
+    await importBackup({ ...await exportAll(), sessions: [older, newest] })
+
+    const restored = useActiveWorkout.getState().session
+    expect(restored?.id).toBe(newest.id)
+    expect(restored?.cursor).toEqual({ entryIndex: 0, setIndex: 2 })
+    expect(await sessionsRepo.get(newest.id)).toEqual(restored)
+  })
+
+  it('flushes the debounce timer before import and never restores the stale version afterwards', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const session = freshSession()
+    await useActiveWorkout.getState().start(session)
+    const completed = { ...session, status: 'completed' as const, finishedAt: 2 }
+    const backup = { ...await exportAll(), sessions: [completed] }
+    useActiveWorkout.getState().setMetric(session.cursor, 'weight', 60)
+
+    await importBackup(backup)
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPendingSave()
+
+    expect(await sessionsRepo.get(session.id)).toEqual(completed)
+    expect(useActiveWorkout.getState().session).toBeNull()
+  })
+
+  it.each(['timer', 'navigation'] as const)('waits for an autosave already started by %s', async (source) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const session = freshSession()
+    await useActiveWorkout.getState().start(session)
+    const completed = { ...session, status: 'completed' as const, finishedAt: 2 }
+    const backup = { ...await exportAll(), sessions: [completed] }
+    const save = sessionsRepo.save
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    const saveSpy = vi.spyOn(sessionsRepo, 'save').mockImplementationOnce(async (value) => {
+      await blocked
+      return save(value)
+    })
+    useActiveWorkout.getState().setMetric(session.cursor, 'weight', 60)
+    if (source === 'timer') vi.advanceTimersByTime(400)
+    else useActiveWorkout.getState().next()
+    await Promise.resolve()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+
+    let imported = false
+    const importing = importBackup(backup).then(() => { imported = true })
+    await Promise.resolve()
+    expect(imported).toBe(false)
+    expect((await sessionsRepo.get(session.id))?.status).toBe('in_progress')
+    release()
+    await importing
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(await sessionsRepo.get(session.id)).toEqual(completed)
+    expect(useActiveWorkout.getState().session).toBeNull()
+  })
+
+  it('preserves local edits when merge skips an equally old incoming session', async () => {
+    const session = freshSession()
+    await useActiveWorkout.getState().start(session)
+    const backup = { ...await exportAll(), sessions: [session] }
+    useActiveWorkout.getState().setMetric(session.cursor, 'weight', 60)
+    const current = useActiveWorkout.getState().session
+
+    expect(await importBackup(backup)).toEqual({ added: 0, updated: 0, skipped: 1 })
+
+    expect(useActiveWorkout.getState().session).toEqual(current)
+    expect(await sessionsRepo.get(session.id)).toEqual(current)
+  })
+
+  it('keeps the current workout if import rejects a backup after flushing edits', async () => {
+    const session = freshSession()
+    await useActiveWorkout.getState().start(session)
+    const backup = await exportAll()
+    useActiveWorkout.getState().setMetric(session.cursor, 'weight', 60)
+    const current = useActiveWorkout.getState().session
+
+    await expect(importBackup({ ...backup, schemaVersion: backup.schemaVersion + 1 }))
+      .rejects.toThrow('более новой версии')
+
+    expect(useActiveWorkout.getState()).toMatchObject({ hydrated: true, session: current })
+    expect(await sessionsRepo.get(session.id)).toEqual(current)
+  })
 })
 
 describe('activeWorkout store', () => {
@@ -116,6 +209,25 @@ describe('activeWorkout store', () => {
     await vi.runAllTimersAsync()
 
     expect(await sessionsRepo.get(session.id)).toBeNull()
+  })
+
+  it.each(['complete', 'discard', 'start'] as const)('%s waits for a queued navigation save', async (action) => {
+    const store = useActiveWorkout.getState()
+    const session = freshSession()
+    await store.start(session)
+    store.setMetric(session.cursor, 'weight', 60)
+    store.next()
+
+    if (action === 'start') await store.start(freshSession())
+    else await store[action]()
+    await flushPendingSave()
+
+    const previous = await sessionsRepo.get(session.id)
+    if (action === 'discard') expect(previous).toBeNull()
+    else {
+      expect(previous?.status).toBe('completed')
+      expect(previous?.entries[0].sets[0].values.weight).toBe(60)
+    }
   })
 
   it('flushPendingSave immediately persists the latest pending session', async () => {

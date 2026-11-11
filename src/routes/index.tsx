@@ -3,7 +3,8 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { Play, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { sessionsRepo } from '@/db/repositories'
-import { exportAll, importAll, parseBackup, serializeBackup } from '@/db/backup'
+import { exportAll, parseBackup, serializeBackup } from '@/db/backup'
+import { importBackup } from '@/stores/importBackup'
 
 export const Route = createFileRoute('/')({
   loader: () => sessionsRepo.getActive(),
@@ -46,7 +47,7 @@ function HomePage() {
     setMessage('')
     try {
       const backup = parseBackup(await file.text())
-      const result = await importAll(backup)
+      const result = await importBackup(backup)
       await router.invalidate()
       setMessage(`Импортировано: ${result.added}, обновлено: ${result.updated}`)
     } catch (error) {
