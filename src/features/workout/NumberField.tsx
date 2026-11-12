@@ -48,14 +48,14 @@ export function NumberField({
   }
 
   return (
-    <div className="grid gap-1.5">
+    <div className="grid min-w-0 gap-1.5">
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-medium">{meta.label}</span>
         {meta.unit && (
           <span className="text-xs text-muted-foreground">{meta.unit}</span>
         )}
       </div>
-      <div className="flex items-stretch gap-2">
+      <div className="flex min-w-0 items-stretch gap-2">
         <Button
           variant="outline"
           size="icon"
