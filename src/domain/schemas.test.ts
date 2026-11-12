@@ -64,3 +64,15 @@ describe('workoutSessionSchema', () => {
     expect(workoutSessionSchema.parse(session).finishedAt).toBeNull()
   })
 })
+
+
+it.each(['t1', null])('accepts session templateId %s without migration', (templateId) => {
+  const session = {
+    id: 's1', templateId, templateName: 'Упражнение: Жим',
+    status: 'in_progress', startedAt: 100, finishedAt: null,
+    entries: [], cursor: { entryIndex: 0, setIndex: 0 },
+  }
+  expect(workoutSessionSchema.parse(session)).toEqual(session)
+  expect(workoutSessionSchema.safeParse({ ...session, templateId: '' }).success).toBe(false)
+  expect(workoutSessionSchema.safeParse({ ...session, templateId: undefined }).success).toBe(false)
+})
