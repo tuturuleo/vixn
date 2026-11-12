@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { X, ArrowLeft, ArrowRight, Check, Dumbbell, Trash2 } from 'lucide-react'
 import { EmptyState } from '@/components/layout/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ export const Route = createFileRoute('/workout/active')({
 
 function ActiveWorkoutPage() {
   const navigate = useNavigate()
+  const router = useRouter()
   const session = useActiveWorkout((s) => s.session)
   const hydrated = useActiveWorkout((s) => s.hydrated)
   const loadActive = useActiveWorkout((s) => s.loadActive)
@@ -23,8 +24,9 @@ function ActiveWorkoutPage() {
   const prev = useActiveWorkout((s) => s.prev)
   const complete = useActiveWorkout((s) => s.complete)
   const discard = useActiveWorkout((s) => s.discard)
-  // Set while discarding so the redirect below doesn't race navigate('/').
-  const discardingRef = useRef(false)
+  // Terminal actions navigate after invalidation; do not race them with the
+  // no-session redirect while they are finishing.
+  const exitingRef = useRef(false)
 
   useEffect(() => {
     if (!hydrated) void loadActive()
@@ -32,7 +34,7 @@ function ActiveWorkoutPage() {
 
   // After hydration, bounce out if there is nothing to record.
   useEffect(() => {
-    if (hydrated && !session && !discardingRef.current) {
+    if (hydrated && !session && !exitingRef.current) {
       navigate({ to: '/workout/start' })
     }
   }, [hydrated, session, navigate])
@@ -42,8 +44,9 @@ function ActiveWorkoutPage() {
   const steps = flatSteps(session)
   if (steps.length === 0) {
     const handleDiscard = async () => {
-      discardingRef.current = true
+      exitingRef.current = true
       await discard()
+      await router.invalidate()
       navigate({ to: '/' })
     }
     return (
@@ -69,16 +72,25 @@ function ActiveWorkoutPage() {
 
   const handleNext = async () => {
     if (!isLast) return next()
-    const done = await complete()
-    if (done) navigate({ to: '/workout/$sessionId', params: { sessionId: done.id } })
+    exitingRef.current = true
+    try {
+      const done = await complete()
+      if (done) {
+        await router.invalidate()
+        await navigate({ to: '/workout/$sessionId', params: { sessionId: done.id } })
+      }
+    } finally {
+      exitingRef.current = false
+    }
   }
 
   const handleDiscard = async () => {
     if (!window.confirm('Отменить тренировку? Записанные подходы будут удалены.')) {
       return
     }
-    discardingRef.current = true
+    exitingRef.current = true
     await discard()
+    await router.invalidate()
     navigate({ to: '/' })
   }
 
