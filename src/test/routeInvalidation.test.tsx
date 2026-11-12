@@ -18,6 +18,7 @@ import { Route as SummaryRoute } from '@/routes/workout.$sessionId'
 import { Route as ProgressRoute } from '@/routes/progress'
 import { exercisesRepo, templatesRepo, sessionsRepo } from '@/db/repositories'
 import { stores } from '@/db/storage'
+import { exportAll, type Backup } from '@/db/backup'
 import { buildSessionFromTemplate } from '@/domain/session'
 import type { Exercise } from '@/domain/schemas'
 import { flushPendingSave, useActiveWorkout } from '@/stores/activeWorkout'
@@ -49,6 +50,17 @@ afterEach(async () => {
   await flushPendingSave()
   vi.restoreAllMocks()
 })
+
+function uploadBackup(backup: Backup | string) {
+  const file = new File([], 'backup.json', { type: 'application/json' })
+  // jsdom's File does not implement text().
+  Object.defineProperty(file, 'text', {
+    value: async () => typeof backup === 'string' ? backup : JSON.stringify(backup),
+  })
+  fireEvent.change(screen.getByLabelText('Файл резервной копии'), {
+    target: { files: [file] },
+  })
+}
 
 async function seed() {
   const exercise = await exercisesRepo.create({ name: 'Жим', metrics: ['reps'] })
@@ -239,5 +251,88 @@ describe('session route invalidation', () => {
     await navigate('/workout/start')
     await waitFor(() => expect(screen.queryByText('Продолжить тренировку')).not.toBeInTheDocument())
     expect(await sessionsRepo.get(session.id)).toBeNull()
+  })
+})
+
+describe('backup import and active workout', () => {
+  it('opens an imported active session after the store was hydrated without one', async () => {
+    const { session } = await seed()
+    await useActiveWorkout.getState().loadActive()
+    expect(useActiveWorkout.getState()).toMatchObject({ hydrated: true, session: null })
+    const backup = { ...await exportAll(), sessions: [session] }
+    const { user } = await renderPage('/')
+
+    uploadBackup(backup)
+    expect(await screen.findByText('Импортировано: 1, обновлено: 0')).toBeInTheDocument()
+    await user.click(await screen.findByRole('link', { name: /Продолжить тренировку/ }))
+
+    expect(await screen.findByRole('button', { name: 'Завершить' })).toBeInTheDocument()
+    expect(useActiveWorkout.getState().session).toEqual(session)
+  })
+
+  it('stops offering the stale active version when its completed version is imported', async () => {
+    const { session } = await seed()
+    await useActiveWorkout.getState().start(session)
+    const completed = { ...session, status: 'completed' as const, finishedAt: session.startedAt + 1000 }
+    const { router, navigate } = await renderPage('/')
+
+    uploadBackup({ ...await exportAll(), sessions: [completed] })
+    expect(await screen.findByText('Импортировано: 0, обновлено: 1')).toBeInTheDocument()
+    expect(useActiveWorkout.getState()).toMatchObject({ hydrated: true, session: null })
+    expect(screen.queryByText('Продолжить тренировку')).not.toBeInTheDocument()
+    await navigate('/workout/active')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/workout/start'))
+    expect(await sessionsRepo.get(session.id)).toEqual(completed)
+  })
+
+  it('drains pending autosave before merging so it cannot overwrite the imported session', async () => {
+    const { session } = await seed()
+    await useActiveWorkout.getState().start(session)
+    const completed = { ...session, status: 'completed' as const, finishedAt: session.startedAt + 1000 }
+    const backup = { ...await exportAll(), sessions: [completed] }
+    await renderPage('/')
+    useActiveWorkout.getState().setMetric(session.cursor, 'reps', 12)
+
+    uploadBackup(backup)
+    expect(await screen.findByText('Импортировано: 0, обновлено: 1')).toBeInTheDocument()
+    await act(async () => { await flushPendingSave() })
+
+    expect(await sessionsRepo.get(session.id)).toEqual(completed)
+    expect(await sessionsRepo.getActive()).toBeNull()
+    expect(useActiveWorkout.getState().session).toBeNull()
+  })
+
+  it('shows an import error and preserves the current workout and its edits', async () => {
+    const { session } = await seed()
+    await useActiveWorkout.getState().start(session)
+    const { invalidate } = await renderPage('/')
+    useActiveWorkout.getState().setMetric(session.cursor, 'reps', 12)
+    const current = useActiveWorkout.getState().session
+
+    uploadBackup('not json')
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Не удалось прочитать JSON'))
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(useActiveWorkout.getState()).toMatchObject({ hydrated: true, session: current })
+    await flushPendingSave()
+    expect(await sessionsRepo.get(session.id)).toEqual(current)
+  })
+
+  it('shows a storage error during import without clearing the current workout', async () => {
+    const { session } = await seed()
+    await useActiveWorkout.getState().start(session)
+    const backup = {
+      ...await exportAll(),
+      sessions: [{ ...session, status: 'completed' as const, finishedAt: session.startedAt + 1000 }],
+    }
+    const { invalidate } = await renderPage('/')
+    vi.spyOn(stores.sessions, 'setItem').mockRejectedValueOnce(new Error('Ошибка записи'))
+
+    uploadBackup(backup)
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Ошибка записи'))
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(useActiveWorkout.getState()).toMatchObject({ hydrated: true, session })
+    expect(await sessionsRepo.get(session.id)).toEqual(session)
   })
 })
