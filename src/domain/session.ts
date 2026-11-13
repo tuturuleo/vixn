@@ -5,6 +5,33 @@ import type {
   WorkoutTemplate,
 } from './schemas'
 
+/** Builds a standalone session without creating a workout template. */
+export function buildSessionFromExercise(
+  exercise: Exercise,
+  sets: number,
+  now: number = Date.now(),
+): WorkoutSession {
+  if (!Number.isInteger(sets) || sets < 1 || sets > 20) {
+    throw new RangeError('Количество подходов должно быть целым числом от 1 до 20')
+  }
+  return {
+    id: newId(),
+    templateId: null,
+    templateName: `Упражнение: ${exercise.name}`,
+    status: 'in_progress',
+    startedAt: now,
+    finishedAt: null,
+    entries: [{
+      exerciseId: exercise.id,
+      exerciseName: exercise.name,
+      metrics: [...exercise.metrics],
+      order: 0,
+      sets: Array.from({ length: sets }, (_, setIndex) => ({ setIndex, values: {} })),
+    }],
+    cursor: { entryIndex: 0, setIndex: 0 },
+  }
+}
+
 /**
  * Builds a fresh in-progress session from a template, snapshotting each
  * exercise's name and metric config so the recorded history stays stable even

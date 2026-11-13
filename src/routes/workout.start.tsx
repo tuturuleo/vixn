@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { createFileRoute, useNavigate, Link, useRouter } from '@tanstack/react-router'
 import { Play, ListChecks, History } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -8,10 +9,11 @@ import {
   exercisesRepo,
   sessionsRepo,
 } from '@/db/repositories'
-import { buildSessionFromTemplate, templateSetCount } from '@/domain/session'
+import { buildSessionFromExercise, buildSessionFromTemplate, templateSetCount } from '@/domain/session'
+import { SingleExerciseStart } from '@/features/workout/SingleExerciseStart'
 import { setsWord } from '@/lib/plural'
 import { useActiveWorkout } from '@/stores/activeWorkout'
-import type { WorkoutTemplate } from '@/domain/schemas'
+import type { WorkoutSession } from '@/domain/schemas'
 
 export const Route = createFileRoute('/workout/start')({
   loader: async () => {
@@ -21,27 +23,41 @@ export const Route = createFileRoute('/workout/start')({
       sessionsRepo.getActive(),
     ])
     const exercisesById = Object.fromEntries(exercises.map((e) => [e.id, e]))
-    return { templates, exercisesById, active }
+    return { templates, exercisesById, exercises: exercises.filter((e) => !e.archived), active }
   },
   component: WorkoutStartPage,
 })
 
 function WorkoutStartPage() {
-  const { templates, exercisesById, active } = Route.useLoaderData()
+  const { templates, exercisesById, exercises, active } = Route.useLoaderData()
   const navigate = useNavigate()
   const router = useRouter()
   const start = useActiveWorkout((s) => s.start)
 
-  const handlePick = async (template: WorkoutTemplate) => {
-    const session = buildSessionFromTemplate(template, exercisesById)
-    await start(session)
-    await router.invalidate()
-    navigate({ to: '/workout/active' })
+  const pending = useRef(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleStart = async (session: WorkoutSession) => {
+    if (pending.current) return
+    pending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await start(session)
+      await router.invalidate()
+      await navigate({ to: '/workout/active' })
+    } catch {
+      setError('Не удалось начать выполнение. Попробуйте ещё раз.')
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
   }
 
   return (
     <>
-      <PageHeader title="Начать тренировку" subtitle="Выберите тренировку" />
+      <PageHeader title="Начать тренировку" subtitle="Выберите тренировку или одно упражнение" />
 
       {active && (
         <Link
@@ -58,6 +74,13 @@ function WorkoutStartPage() {
           <Play className="size-5 text-primary" />
         </Link>
       )}
+
+      <SingleExerciseStart
+        exercises={exercises}
+        saving={saving}
+        onStart={(exercise, sets) => handleStart(buildSessionFromExercise(exercise, sets))}
+      />
+      {error && <p role="alert" className="mb-4 text-sm text-destructive">{error}</p>}
 
       {templates.length === 0 ? (
         <EmptyState
@@ -77,7 +100,8 @@ function WorkoutStartPage() {
             return (
               <li key={template.id}>
                 <button
-                  onClick={() => handlePick(template)}
+                  onClick={() => handleStart(buildSessionFromTemplate(template, exercisesById))}
+                  disabled={saving}
                   className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-4 text-left active:scale-[0.99]"
                 >
                   <div className="min-w-0 flex-1">

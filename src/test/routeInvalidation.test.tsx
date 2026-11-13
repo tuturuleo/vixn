@@ -35,7 +35,7 @@ vi.mock('@/features/templates/ExercisePickerSheet', () => ({
     <button key={exercise.id} onClick={() => { onPick(exercise); onOpenChange(false) }}>
       {exercise.name}
     </button>
-  )) : null,
+  )).concat(<button key="cancel" onClick={() => onOpenChange(false)}>Отмена</button>) : null,
 }))
 
 beforeEach(async () => {
@@ -334,5 +334,117 @@ describe('backup import and active workout', () => {
     expect(invalidate).not.toHaveBeenCalled()
     expect(useActiveWorkout.getState()).toMatchObject({ hydrated: true, session })
     expect(await sessionsRepo.get(session.id)).toEqual(session)
+  })
+})
+
+
+describe('standalone exercise start', () => {
+  async function choose(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Выполнить упражнение' }))
+    await user.click(screen.getByRole('button', { name: 'Жим' }))
+  }
+
+  it('starts without templates, excludes archived exercises, resumes after reload and finishes in history', async () => {
+    const exercise = await exercisesRepo.create({ name: 'Жим', metrics: ['reps'] })
+    const archived = await exercisesRepo.create({ name: 'Архивное', metrics: ['weight'] })
+    await exercisesRepo.archive(archived.id)
+    const { preload, user, navigate, invalidate } = await renderPage('/workout/start')
+    await preload('/')
+    await user.click(screen.getByRole('button', { name: 'Выполнить упражнение' }))
+    expect(screen.queryByRole('button', { name: 'Архивное' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Жим' }))
+    expect(screen.getByText('3 подхода')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Меньше подходов' }))
+    await user.click(screen.getByRole('button', { name: 'Начать упражнение' }))
+    expect(await screen.findByText('Подход 1 из 2 · 2 подхода')).toBeInTheDocument()
+    const session = useActiveWorkout.getState().session!
+    expect(session.templateId).toBeNull()
+    expect(session.entries).toHaveLength(1)
+    expect(session.entries[0].exerciseId).toBe(exercise.id)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    await user.type(screen.getByRole('textbox'), '12')
+    await waitFor(async () => expect((await sessionsRepo.get(session.id))?.entries[0].sets[0].values).toEqual({ reps: 12 }))
+    await navigate('/')
+    expect(await screen.findByRole('link', { name: /Продолжить тренировку.*Упражнение: Жим/ })).toBeInTheDocument()
+    await navigate('/workout/start')
+    expect(await screen.findByRole('link', { name: /Продолжить тренировку.*Упражнение: Жим/ })).toBeInTheDocument()
+    cleanup()
+    useActiveWorkout.setState({ session: null, hydrated: false })
+    const reloaded = await renderPage('/workout/active')
+    expect(await screen.findByRole('textbox')).toHaveValue('12')
+    await reloaded.user.click(screen.getByRole('button', { name: 'Далее' }))
+    expect(screen.getByRole('textbox')).toHaveValue('12')
+    await reloaded.user.click(screen.getByRole('button', { name: 'Завершить' }))
+    expect(await screen.findByRole('heading', { name: 'Упражнение: Жим' })).toBeInTheDocument()
+    expect(screen.getByText('Жим')).toBeInTheDocument()
+    await reloaded.navigate('/progress')
+    expect(await screen.findByRole('button', { name: 'Жим' })).toBeInTheDocument()
+    await reloaded.user.click(screen.getByRole('button', { name: 'История' }))
+    expect(await screen.findByRole('link', { name: /Упражнение: Жим/ })).toBeInTheDocument()
+    expect(await sessionsRepo.listCompleted()).toHaveLength(1)
+    expect(await templatesRepo.list()).toEqual([])
+  })
+
+  it('cancels picker and configuration without replacing the current session; enforces bounds', async () => {
+    const { session } = await seed()
+    await useActiveWorkout.getState().start(session)
+    const { user } = await renderPage('/workout/start')
+    await user.click(screen.getByRole('button', { name: 'Выполнить упражнение' }))
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(screen.queryByRole('button', { name: 'Начать упражнение' })).not.toBeInTheDocument()
+    await choose(user)
+    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: 'Меньше подходов' }))
+    expect(screen.getByRole('button', { name: 'Меньше подходов' })).toBeDisabled()
+    for (let i = 0; i < 20; i++) await user.click(screen.getByRole('button', { name: 'Больше подходов' }))
+    expect(screen.getByText('20 подходов')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Больше подходов' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(await sessionsRepo.getActive()).toEqual(session)
+    expect(useActiveWorkout.getState().session).toEqual(session)
+  })
+
+  it('shows an empty state linked to the exercise library when all exercises are archived', async () => {
+    const exercise = await exercisesRepo.create({ name: 'Архивное', metrics: ['reps'] })
+    await exercisesRepo.archive(exercise.id)
+    const { user } = await renderPage('/workout/start')
+    await user.click(screen.getByRole('button', { name: 'Выполнить упражнение' }))
+    expect(screen.getByText(/Нет активных упражнений/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Добавьте упражнение в справочник' })).toHaveAttribute('href', '/exercises')
+    expect(await sessionsRepo.getActive()).toBeNull()
+  })
+
+  it('waits for persistence, blocks duplicate starts and stays on the page on failure', async () => {
+    await exercisesRepo.create({ name: 'Жим', metrics: ['reps'] })
+    const { user, router, invalidate } = await renderPage('/workout/start')
+    await choose(user)
+    let reject!: (error: Error) => void
+    const save = vi.spyOn(sessionsRepo, 'save').mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+    fireEvent.click(screen.getByRole('button', { name: 'Начать упражнение' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Запуск…' }))
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    expect(router.state.location.pathname).toBe('/workout/start')
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Запуск…' })).toBeDisabled()
+    await act(async () => reject(new Error('Storage unavailable')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось начать выполнение')
+    expect(router.state.location.pathname).toBe('/workout/start')
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(await sessionsRepo.getActive()).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Начать упражнение' }))
+    expect(await screen.findByText('Подход 1 из 3 · 3 подхода')).toBeInTheDocument()
+  })
+
+  it('discards a standalone session through the existing active screen', async () => {
+    await exercisesRepo.create({ name: 'Жим', metrics: ['reps'] })
+    const { user, router } = await renderPage('/workout/start')
+    await choose(user)
+    await user.click(screen.getByRole('button', { name: 'Начать упражнение' }))
+    await screen.findByRole('button', { name: 'Отменить' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: 'Отменить' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    expect(await sessionsRepo.getActive()).toBeNull()
+    expect(await sessionsRepo.listCompleted()).toEqual([])
+    expect(await templatesRepo.list()).toEqual([])
   })
 })

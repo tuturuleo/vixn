@@ -71,7 +71,7 @@ export type SessionCursor = z.infer<typeof sessionCursorSchema>
 
 export const workoutSessionSchema = z.object({
   id: z.string().min(1),
-  templateId: z.string().min(1),
+  templateId: z.string().min(1).nullable(),
   templateName: z.string().min(1),
   status: sessionStatusSchema,
   startedAt: epochMs,

@@ -6,6 +6,7 @@ import {
   DrawerDescription,
 } from '@/components/ui/drawer'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { METRIC_META } from '@/domain/metrics'
 import type { Exercise } from '@/domain/schemas'
 
@@ -14,17 +15,19 @@ export function ExercisePickerSheet({
   onOpenChange,
   exercises,
   onPick,
+  title = 'Добавить упражнение',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   exercises: Exercise[]
   onPick: (exercise: Exercise) => void
+  title?: string
 }) {
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent className="max-h-[80dvh]">
         <DrawerHeader>
-          <DrawerTitle>Добавить упражнение</DrawerTitle>
+          <DrawerTitle>{title}</DrawerTitle>
           <DrawerDescription>Выберите из справочника</DrawerDescription>
         </DrawerHeader>
 
@@ -55,6 +58,9 @@ export function ExercisePickerSheet({
             </li>
           ))}
         </ul>
+        <Button variant="ghost" className="mx-4 mb-4" onClick={() => onOpenChange(false)}>
+          Отмена
+        </Button>
       </DrawerContent>
     </Drawer>
   )

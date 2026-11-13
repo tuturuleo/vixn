@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { exportAll, importAll, parseBackup, serializeBackup, type Backup } from './backup'
+import { buildSessionFromExercise } from '@/domain/session'
+import { sessionsRepo } from './repositories'
 import { SCHEMA_VERSION, stores } from './storage'
 
 const clearStores = () => Promise.all(Object.values(stores).map((store) => store.clear()))
@@ -142,4 +144,20 @@ describe('backup', () => {
     await stores.exercises.setItem('broken', { id: 'broken' })
     expect((await exportAll()).exercises).toEqual(fixture().exercises)
   })
+})
+
+
+it('round-trips standalone and legacy sessions through repository and backup', async () => {
+  const legacy = fixture()
+  await importAll(parseBackup(JSON.stringify(legacy)))
+  const single = buildSessionFromExercise(legacy.exercises[0], 2, 500)
+  single.entries[0].sets[0].values = { weight: 60, reps: 12 }
+  await sessionsRepo.save(single)
+  expect(await sessionsRepo.get(single.id)).toEqual(single)
+  const backup = parseBackup(serializeBackup(await exportAll()))
+  expect(backup.sessions).toContainEqual(single)
+  await clearStores()
+  await importAll(backup)
+  expect(await sessionsRepo.get(single.id)).toEqual(single)
+  for (const session of legacy.sessions) expect(await sessionsRepo.get(session.id)).toEqual(session)
 })

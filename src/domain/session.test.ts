@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  buildSessionFromExercise,
   buildSessionFromTemplate,
   filledSets,
   normalizeCursor,
@@ -127,5 +128,35 @@ describe('normalizeCursor', () => {
   it('resets the cursor when there are no entries', () => {
     const s = { ...base, entries: [], cursor: { entryIndex: 3, setIndex: 4 } }
     expect(normalizeCursor(s).cursor).toEqual({ entryIndex: 0, setIndex: 0 })
+  })
+})
+
+
+describe('buildSessionFromExercise', () => {
+  it.each([1, 2, 3, 20])('builds one independent snapshot with %s empty sets', (sets) => {
+    const exercise = { ...bench, metrics: [...bench.metrics] }
+    const session = buildSessionFromExercise(exercise, sets, 1234)
+    expect(session).toEqual({
+      id: expect.any(String), templateId: null, templateName: 'Упражнение: Жим лёжа',
+      status: 'in_progress', startedAt: 1234, finishedAt: null,
+      cursor: { entryIndex: 0, setIndex: 0 },
+      entries: [{
+        exerciseId: bench.id, exerciseName: bench.name, metrics: bench.metrics,
+        order: 0, sets: Array.from({ length: sets }, (_, setIndex) => ({ setIndex, values: {} })),
+      }],
+    })
+    expect(session.id).not.toBe(buildSessionFromExercise(exercise, sets).id)
+    exercise.name = 'Изменено'
+    exercise.metrics.pop()
+    expect(session.entries[0].exerciseName).toBe(bench.name)
+    expect(session.entries[0].metrics).toEqual(bench.metrics)
+    if (sets > 1) {
+      session.entries[0].sets[0].values.reps = 10
+      expect(session.entries[0].sets[1].values).toEqual({})
+    }
+  })
+
+  it.each([0, -1, 21, 1.5, NaN, Infinity])('rejects invalid set count %s', (sets) => {
+    expect(() => buildSessionFromExercise(bench, sets)).toThrow(RangeError)
   })
 })

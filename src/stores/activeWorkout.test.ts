@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { flushPendingSave, useActiveWorkout } from './activeWorkout'
-import { buildSessionFromTemplate } from '@/domain/session'
+import { buildSeries, collectExerciseStats } from '@/domain/progress'
+import { buildSessionFromExercise, buildSessionFromTemplate } from '@/domain/session'
 import { sessionsRepo } from '@/db/repositories'
 import { stores } from '@/db/storage'
 import { exportAll } from '@/db/backup'
@@ -334,5 +335,45 @@ describe('activeWorkout store', () => {
     expect(s.cursor).toEqual({ entryIndex: 0, setIndex: 2 })
     expect(s.entries[s.cursor.entryIndex].sets[s.cursor.setIndex]).toBeDefined()
     expect((await sessionsRepo.get(broken.id))?.cursor).toEqual(s.cursor)
+  })
+})
+
+
+describe('standalone workout', () => {
+  it('autosaves, resumes, prefills, completes and combines progress with template results', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const session = buildSessionFromExercise(bench, 2, 100)
+    const store = useActiveWorkout.getState()
+    await store.start(session)
+    store.setMetric(session.cursor, 'reps', 12)
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPendingSave()
+    useActiveWorkout.setState({ session: null, hydrated: false })
+    await store.loadActive()
+    expect(useActiveWorkout.getState().session?.entries[0].sets[0].values).toEqual({ reps: 12 })
+    store.next()
+    expect(useActiveWorkout.getState().session?.entries[0].sets[1].values).toEqual({ reps: 12 })
+    await store.complete()
+    const regular = freshSession()
+    regular.entries[0].sets[0].values = { reps: 8 }
+    await sessionsRepo.save({ ...regular, status: 'completed', finishedAt: 10 })
+    const history = await sessionsRepo.listCompleted()
+    expect(history).toHaveLength(2)
+    expect(collectExerciseStats(history)).toHaveLength(1)
+    expect(buildSeries(history, bench.id, 'reps').map((point) => point.value)).toEqual([8, 12])
+  })
+
+  it.each([false, true])('preserves replacement policy with saved results: %s', async (filled) => {
+    const previous = freshSession()
+    if (filled) previous.entries[0].sets[0].values = { reps: 8 }
+    await sessionsRepo.save(previous)
+    const single = buildSessionFromExercise(bench, 2)
+    await useActiveWorkout.getState().start(single)
+    expect((await sessionsRepo.listActive()).map((s) => s.id)).toEqual([single.id])
+    const old = await sessionsRepo.get(previous.id)
+    if (filled) expect(old).toMatchObject({ status: 'completed', finishedAt: previous.startedAt })
+    else expect(old).toBeNull()
+    await useActiveWorkout.getState().discard()
+    expect(await sessionsRepo.get(single.id)).toBeNull()
   })
 })
